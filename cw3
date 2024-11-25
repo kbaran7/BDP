@@ -1,0 +1,76 @@
+-------1
+  CREATE VIEW modified_buildings AS 
+SELECT ST_Difference(b2018.geom, b2019.geom) AS geometry_diff
+FROM t2018_kar_buildings b2018 
+INNER JOIN t2019_kar_buildings b2019 
+ON b2018.building_id = b2019.building_id
+WHERE NOT ST_IsEmpty(ST_Difference(b2018.geom, b2019.geom));
+
+
+
+-------2
+ CREATE VIEW poi_differences AS
+SELECT ST_Difference(p2018.geom, p2019.geom) AS poi_geometry_diff, p2019.category AS poi_category
+FROM t2018_kar_poi_table p2018
+INNER JOIN t2019_kar_poi_table p2019
+ON p2018.poi_id = p2019.poi_id
+WHERE NOT ST_IsEmpty(ST_Difference(p2018.geom, p2019.geom));
+
+SELECT DISTINCT pd.poi_category, COUNT(pd.poi_category) AS category_count 
+FROM modified_buildings mb
+JOIN poi_differences pd 
+ON ST_DWithin(ST_Buffer(mb.geometry_diff, 500), pd.poi_geometry_diff, 500)
+GROUP BY pd.poi_category;
+
+-------3
+  CREATE TABLE reprojected_streets (street_id integer, geometry geometry);
+
+INSERT INTO reprojected_streets 
+SELECT street_id, geom FROM t2019_kar_streets;
+
+UPDATE reprojected_streets 
+SET geometry = ST_Transform(ST_SetSRID(geometry, 4326), 3068);
+
+
+------4
+  CREATE TABLE spatial_inputs (input_id integer, geometry geometry);
+
+INSERT INTO spatial_inputs (input_id, geometry)
+VALUES (1, ST_SetSRID(ST_MakePoint(8.36093, 49.03174), 4326)),
+       (2, ST_SetSRID(ST_MakePoint(8.39876, 49.00644), 4326));
+
+UPDATE spatial_inputs 
+SET geometry = ST_Transform(geometry, 3068);
+
+
+INSERT INTO spatial_points (geom)
+VALUES 
+(ST_MakePoint(8.36093, 49.03174)::geometry),
+(ST_MakePoint(8.39876, 49.00644)::geometry);
+
+UPDATE spatial_points
+SET geom = ST_Transform(geom, 3068);
+
+----5
+  SELECT DISTINCT sn.geometry 
+FROM t2019_kar_street_node sn
+JOIN spatial_inputs si 
+ON ST_DWithin(sn.geometry, si.geometry, 200);
+
+-----6
+  SELECT COUNT(DISTINCT poi.geometry) AS total_sport_stores
+FROM t2019_kar_poi_table poi
+JOIN t2019_kar_land_use_a parks 
+ON ST_DWithin(parks.geometry, poi.geometry, 300)
+WHERE poi.category = 'Sporting Goods Store';
+
+
+-----7
+  CREATE TABLE railway_water_crossings AS 
+SELECT ST_Intersection(rail.geometry, water.geometry) AS intersection_geometry
+FROM t2019_kar_railways rail
+JOIN t2019_kar_water_lines water
+ON ST_Intersects(rail.geometry, water.geometry);
+
+
+  
